@@ -156,7 +156,7 @@ class BasicTransformerBlock(nn.Module):
         timestep: Optional[torch.LongTensor] = None,
         cross_attention_kwargs: Dict[str, Any] = None,
         class_labels: Optional[torch.LongTensor] = None,
-    ) -> torch.FloatTensor:
+    ) -> torch.FloatTensor:                 # 被替换的函数，项目不走这里
         # Notice that normalization is always applied before the real computation in the following blocks.
         # 0. Self-Attention
         batch_size = hidden_states.shape[0]
@@ -324,7 +324,7 @@ class TemporalBasicTransformerBlock(nn.Module):
                 else nn.LayerNorm(dim)
             )
 
-    def forward(
+    def forward(                    #这里的forward直接没有实现
         self,
         hidden_states,
         encoder_hidden_states=None,

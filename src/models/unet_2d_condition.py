@@ -964,7 +964,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
         # this helps to broadcast it as a bias over attention scores, which will be in one of the following shapes:
         #   [batch,  heads, query_tokens, key_tokens] (e.g. torch sdp attn)
         #   [batch * heads, query_tokens, key_tokens] (e.g. xformers or classic attn)
-        if attention_mask is not None:
+        if attention_mask is not None:                                                  # attention_mask是none，没进这里
             # assume that mask is expressed as:
             #   (1 = keep,      0 = discard)
             # convert mask into a bias that can be added to attention scores:
@@ -973,7 +973,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
             attention_mask = attention_mask.unsqueeze(1)
 
         # convert encoder_attention_mask to a bias the same way we do for attention_mask
-        if encoder_attention_mask is not None:
+        if encoder_attention_mask is not None:                                          # encoder_attention_mask是none，没进这里
             encoder_attention_mask = (
                 1 - encoder_attention_mask.to(sample.dtype)
             ) * -10000.0
@@ -999,6 +999,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
 
         # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
         timesteps = timesteps.expand(sample.shape[0])
+        # print('timesteps shape',timesteps.shape)                   torch.Size([1])
 
         t_emb = self.time_proj(timesteps)
 
@@ -1029,7 +1030,8 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 emb = torch.cat([emb, class_emb], dim=-1)
             else:
                 emb = emb + class_emb
-
+        # print("config.addition_embed_type:",self.config.addition_embed_type)                    #config.addition_embed_type是None
+        # 所以以下if 的所有分支都没进
         if self.config.addition_embed_type == "text":
             aug_emb = self.add_embedding(encoder_hidden_states)
         elif self.config.addition_embed_type == "text_image":
@@ -1085,7 +1087,8 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
 
         if self.time_embed_act is not None:
             emb = self.time_embed_act(emb)
-
+        # print("config.encoder_hid_dim_type :",self.config.encoder_hid_dim_type)                 # config.encoder_hid_dim_type是none，所以以下都没进
+        # 以下的if的所有分支都没进
         if (
             self.encoder_hid_proj is not None
             and self.config.encoder_hid_dim_type == "text_proj"
@@ -1136,6 +1139,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
         sample = self.conv_in(sample)
 
         # 2.5 GLIGEN position net
+        # print("cross_attention_kwargs:",cross_attention_kwargs)                                 # None, 没进if分支
         if (
             cross_attention_kwargs is not None
             and cross_attention_kwargs.get("gligen", None) is not None
@@ -1147,25 +1151,26 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
             }
 
         # 3. down
-        lora_scale = (
+        lora_scale = (                                                                           # 从代码看 lora_scale是1
             cross_attention_kwargs.get("scale", 1.0)
             if cross_attention_kwargs is not None
             else 1.0
         )
+        # print('use peft backend',USE_PEFT_BACKEND)                                              # False,所以没进if分支
         if USE_PEFT_BACKEND:
             # weight the lora layers by setting `lora_scale` for each PEFT layer
             scale_lora_layers(self, lora_scale)
-
+        # print("is_controlnet:",mid_block_additional_residual,down_block_additional_residuals)       # none none, 所以is_controlnet是false
         is_controlnet = (
             mid_block_additional_residual is not None
             and down_block_additional_residuals is not None
         )
         # using new arg down_intrablock_additional_residuals for T2I-Adapters, to distinguish from controlnets
-        is_adapter = down_intrablock_additional_residuals is not None
+        is_adapter = down_intrablock_additional_residuals is not None                               # is_adapter 是 false
         # maintain backward compatibility for legacy usage, where
         #       T2I-Adapter and ControlNet both use down_block_additional_residuals arg
         #       but can only use one or the other
-        if (
+        if (                                                                                        # 没进这个if分支
             not is_adapter
             and mid_block_additional_residual is None
             and down_block_additional_residuals is not None
@@ -1195,8 +1200,8 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                         "additional_residuals"
                     ] = down_intrablock_additional_residuals.pop(0)
 
-                sample, res_samples = downsample_block(
-                    hidden_states=sample,
+                sample, res_samples = downsample_block(         # 带有transformer的downsample_block中有两层注意力，一层自注意力一层交叉注意力,也可能只有一层自注意力
+                    hidden_states=sample,                       # 只要进入atten层，就会以hacked_basic_transformer_inner_forward代替
                     temb=emb,
                     encoder_hidden_states=encoder_hidden_states,
                     attention_mask=attention_mask,
@@ -1211,7 +1216,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 if is_adapter and len(down_intrablock_additional_residuals) > 0:
                     sample += down_intrablock_additional_residuals.pop(0)
 
-            down_block_res_samples += res_samples
+            down_block_res_samples += res_samples                           #这里将每层的res_samples记录下来，但是 sample张量会进入下一层block参与计算
 
         if is_controlnet:
             new_down_block_res_samples = ()
@@ -1229,7 +1234,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
             down_block_res_samples = new_down_block_res_samples
 
         # 4. mid
-        if self.mid_block is not None:
+        if self.mid_block is not None:                                     #中间层计算
             if (
                 hasattr(self.mid_block, "has_cross_attention")
                 and self.mid_block.has_cross_attention
@@ -1246,7 +1251,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 sample = self.mid_block(sample, emb)
 
             # To support T2I-Adapter-XL
-            if (
+            if (                                                            # 没进到这里
                 is_adapter
                 and len(down_intrablock_additional_residuals) > 0
                 and sample.shape == down_intrablock_additional_residuals[0].shape

@@ -17,7 +17,7 @@ class PoseEncoder(ModelMixin):
         block_out_channels: Tuple[int] = (16, 32, 64, 128),
     ):
         super().__init__()
-        self.conv_in = InflatedConv3d(
+        self.conv_in = InflatedConv3d(                                          # 2d卷积
             conditioning_channels, block_out_channels[0], kernel_size=3, padding=1
         )
 
@@ -35,7 +35,7 @@ class PoseEncoder(ModelMixin):
                 )
             )
 
-        self.conv_out = zero_module(
+        self.conv_out = zero_module(                                            #为什么要把参数清零，后面还是要加载模型参数啊
             InflatedConv3d(
                 block_out_channels[-1],
                 conditioning_embedding_channels,

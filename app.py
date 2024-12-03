@@ -18,6 +18,8 @@ import gradio as gr
 from datetime import datetime
 from torchao.quantization import quantize_, int8_weight_only
 import gc
+import warnings
+warnings.filterwarnings('ignore')
 
 total_vram_in_gb = torch.cuda.get_device_properties(0).total_memory / 1073741824
 print(f'\033[32mCUDA版本：{torch.version.cuda}\033[0m')
@@ -32,7 +34,7 @@ else:
     print("cuda not available, using cpu")
     device = "cpu"
 
-ffmpeg_path = os.getenv('FFMPEG_PATH')
+ffmpeg_path = os.getenv('FFMPEG_PATH')                                                            #加入ffmpeg路径
 if ffmpeg_path is None:
     print("please download ffmpeg-static and export to FFMPEG_PATH. \nFor example: export FFMPEG_PATH=./ffmpeg-4.4-amd64-static")
 elif ffmpeg_path not in os.getenv('PATH'):
@@ -49,13 +51,13 @@ def generate(image_input, audio_input, pose_input, width, height, length, steps,
     save_dir.mkdir(exist_ok=True, parents=True)
 
     ############# model_init started #############
-    ## vae init
+    ## vae init                                                                                 # 初始化vae
     vae = AutoencoderKL.from_pretrained("./pretrained_weights/sd-vae-ft-mse").to(device, dtype=dtype)
     if quantization_input:
         quantize_(vae, int8_weight_only())
         print("使用int8量化")
 
-    ## reference net init
+    ## reference net init                                                                       #初始化2d unet
     reference_unet = UNet2DConditionModel.from_pretrained("./pretrained_weights/sd-image-variations-diffusers", subfolder="unet", use_safetensors=False).to(dtype=dtype, device=device)
     reference_unet.load_state_dict(torch.load("./pretrained_weights/reference_unet.pth", weights_only=True))
     if quantization_input:
@@ -67,7 +69,7 @@ def generate(image_input, audio_input, pose_input, width, height, length, steps,
     else:
         exit("motion module not found")
         ### stage1 + stage2
-    denoising_unet = EMOUNet3DConditionModel.from_pretrained_2d(
+    denoising_unet = EMOUNet3DConditionModel.from_pretrained_2d(                            #初始化3d unet
         "./pretrained_weights/sd-image-variations-diffusers",
         "./pretrained_weights/motion_module.pth",
         subfolder="unet",
@@ -101,11 +103,11 @@ def generate(image_input, audio_input, pose_input, width, height, length, steps,
     ).to(dtype=dtype, device=device)
     denoising_unet.load_state_dict(torch.load("./pretrained_weights/denoising_unet.pth", weights_only=True),strict=False)
 
-    # pose net init
+    # pose net init                                                                         #初始化姿态 encoder
     pose_net = PoseEncoder(320, conditioning_channels=3, block_out_channels=(16, 32, 96, 256)).to(dtype=dtype, device=device)
     pose_net.load_state_dict(torch.load("./pretrained_weights/pose_encoder.pth", weights_only=True))
 
-    ### load audio processor params
+    ### load audio processor params                                                         #初始化音频encoder
     audio_processor = load_audio_model(model_path="./pretrained_weights/audio_processor/tiny.pt", device=device)
    
     ############# model_init finished #############
@@ -119,9 +121,9 @@ def generate(image_input, audio_input, pose_input, width, height, length, steps,
         "rescale_betas_zero_snr": True,
         "timestep_spacing": "trailing"
     }
-    scheduler = DDIMScheduler(**sched_kwargs)
+    scheduler = DDIMScheduler(**sched_kwargs)                                               #初始化采样器
 
-    pipe = EchoMimicV2Pipeline(
+    pipe = EchoMimicV2Pipeline(                                                             #初始化pipeline，将以上实例化的模型组装起来
         vae=vae,
         reference_unet=reference_unet,
         denoising_unet=denoising_unet,
@@ -161,8 +163,9 @@ def generate(image_input, audio_input, pose_input, width, height, length, steps,
     for index in range(start_idx, start_idx + length):
         tgt_musk = np.zeros((width, height, 3)).astype('uint8')
         tgt_musk_path = os.path.join(inputs_dict['pose'], "{}.npy".format(index))
-        detected_pose = np.load(tgt_musk_path, allow_pickle=True).tolist()
-        imh_new, imw_new, rb, re, cb, ce = detected_pose['draw_pose_params']
+        detected_pose = np.load(tgt_musk_path, allow_pickle=True).tolist()                         #加载姿态动作文件,通过.tolist将数据转化为一个字典
+        imh_new, imw_new, rb, re, cb, ce = detected_pose['draw_pose_params']                       #字典的键包含 bodies,hands,hands_score,faces,faces_score,num,draw_pose_params
+    #   图片高    图片宽  top bottom left right    以上6个变量
         im = draw_pose_select_v2(detected_pose, imh_new, imw_new, ref_w=800)
         im = np.transpose(np.array(im),(1, 2, 0))
         tgt_musk[rb:re,cb:ce,:] = im
@@ -274,4 +277,4 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
 if __name__ == "__main__":
     demo.queue()
-    demo.launch(inbrowser=True)
+    demo.launch(inbrowser=True,share=True)

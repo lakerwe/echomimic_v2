@@ -1,4 +1,5 @@
 import argparse
+import cv2
 import os
 import random
 from datetime import datetime
@@ -22,8 +23,11 @@ from src.utils.dwpose_util import draw_pose_select_v2
 
 from decord import VideoReader
 from moviepy.editor import VideoFileClip, AudioFileClip
+import warnings
+warnings.filterwarnings('ignore')
 
-ffmpeg_path = os.getenv('FFMPEG_PATH')
+# ffmpeg_path = os.getenv('FFMPEG_PATH')
+ffmpeg_path = '/home/Image2Video/ffmpeg-4.4-amd64-static'
 if ffmpeg_path is None:
     print("please download ffmpeg-static and export to FFMPEG_PATH. \nFor example: export FFMPEG_PATH=./ffmpeg-4.4-amd64-static")
 elif ffmpeg_path not in os.getenv('PATH'):
@@ -87,7 +91,7 @@ def main():
     ).to(device, dtype=weight_dtype)
 
     ## reference net init
-    reference_unet = UNet2DConditionModel.from_pretrained(
+    reference_unet = UNet2DConditionModel.from_pretrained(                  #类本地导入
         config.pretrained_base_model_path,
         subfolder="unet",
     ).to(dtype=weight_dtype, device=device)
@@ -101,7 +105,7 @@ def main():
     else:
         exit("motion module not found")
         ### stage1 + stage2
-    denoising_unet = EMOUNet3DConditionModel.from_pretrained_2d(
+    denoising_unet = EMOUNet3DConditionModel.from_pretrained_2d(            #类本地导入
         config.pretrained_base_model_path,
         config.motion_module_path,
         subfolder="unet",
@@ -114,7 +118,7 @@ def main():
     )
 
     # pose net init
-    pose_net = PoseEncoder(320, conditioning_channels=3, block_out_channels=(16, 32, 96, 256)).to(
+    pose_net = PoseEncoder(320, conditioning_channels=3, block_out_channels=(16, 32, 96, 256)).to(          #类本地导入
         dtype=weight_dtype, device=device
     )
     pose_net.load_state_dict(torch.load(config.pose_encoder_path))
@@ -127,7 +131,7 @@ def main():
     sched_kwargs = OmegaConf.to_container(infer_config.noise_scheduler_kwargs)
     scheduler = DDIMScheduler(**sched_kwargs)
 
-    pipe = EchoMimicV2Pipeline(
+    pipe = EchoMimicV2Pipeline(                                         #类本地导入
         vae=vae,
         reference_unet=reference_unet,
         denoising_unet=denoising_unet,
@@ -181,14 +185,15 @@ def main():
     args.L = min(args.L, int(audio_clip.duration * final_fps), len(os.listdir(inputs_dict['pose'])))
 
     pose_list = []
-    for index in range(start_idx, start_idx + args.L):
+    for index in range(start_idx, start_idx + args.L):              #处理手部关键点信息，将首部关键点坐标转换为图片
         tgt_musk = np.zeros((args.W, args.H, 3)).astype('uint8')
         tgt_musk_path = os.path.join(inputs_dict['pose'], "{}.npy".format(index))
         detected_pose = np.load(tgt_musk_path, allow_pickle=True).tolist()
         imh_new, imw_new, rb, re, cb, ce = detected_pose['draw_pose_params']
         im = draw_pose_select_v2(detected_pose, imh_new, imw_new, ref_w=800)
         im = np.transpose(np.array(im),(1, 2, 0))
-        tgt_musk[rb:re,cb:ce,:] = im
+        # cv2.imwrite(f'del/{index}.jpg',im.astype(np.uint8))       #这里将手部关键点绘制成图片，在这里没有进行像素值归一化
+        tgt_musk[rb:re,cb:ce,:] = im                                #对手部关键点图片进行裁剪,其实与原图大小相同
 
         tgt_musk_pil = Image.fromarray(np.array(tgt_musk)).convert('RGB')
         pose_list.append(torch.Tensor(np.array(tgt_musk_pil)).to(dtype=weight_dtype, device=device).permute(2,0,1) / 255.0)
@@ -196,22 +201,22 @@ def main():
     poses_tensor = torch.stack(pose_list, dim=1).unsqueeze(0)
     audio_clip = AudioFileClip(inputs_dict['audio'])
     
-    audio_clip = audio_clip.set_duration(args.L / final_fps)
+    audio_clip = audio_clip.set_duration(args.L / final_fps)        #剪出音频的前N秒
     video = pipe(
         ref_image_pil,
-        inputs_dict['audio'],
-        poses_tensor[:,:,:args.L,...],
+        inputs_dict['audio'],                                       #将音频的地址传入
+        poses_tensor[:,:,:args.L,...],                              #测试文件的pose只包含了手部动作
         width,
         height,
-        args.L,
-        args.steps,
-        args.cfg,
+        args.L,                                                     # video_length
+        args.steps,                                                 # num_inference_steps
+        args.cfg,                                                   # guidance_scale = 2.5
         generator=generator,
         audio_sample_rate=args.sample_rate,
-        context_frames=args.context_frames,
-        fps=final_fps,
-        context_overlap=args.context_overlap,
-        start_idx=start_idx,
+        context_frames=args.context_frames,                         # 12
+        fps=final_fps,                                              # 24
+        context_overlap=args.context_overlap,                       # 3
+        start_idx=start_idx,                                        # 0
     ).videos 
     
     final_length = min(video.shape[2], poses_tensor.shape[2], args.L)

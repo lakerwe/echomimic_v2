@@ -818,7 +818,7 @@ class CrossAttnUpBlock2D(nn.Module):
             resnet_in_channels = prev_output_channel if i == 0 else out_channels
 
             resnets.append(
-                ResnetBlock2D(
+                ResnetBlock2D(                                         #注意 resnetBlock2D是从diffusers库直接导入
                     in_channels=resnet_in_channels + res_skip_channels,
                     out_channels=out_channels,
                     temb_channels=temb_channels,
@@ -833,7 +833,7 @@ class CrossAttnUpBlock2D(nn.Module):
             )
             if not dual_cross_attention:
                 attentions.append(
-                    Transformer2DModel(
+                    Transformer2DModel(                                 # 注意Transformer2DModel类是从本地导入，其中涉及的BasicTransformerBlock类也是从本地导入
                         num_attention_heads,
                         out_channels // num_attention_heads,
                         in_channels=out_channels,
