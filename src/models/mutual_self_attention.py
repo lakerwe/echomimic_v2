@@ -149,7 +149,7 @@ class ReferenceAttentionControl:
                         )
                         for d in self.bank
                     ]
-                    modify_norm_hidden_states = torch.cat(          #将本次输入的特征与bank中的cat到一起
+                    modify_norm_hidden_states = torch.cat(          #将本次输入的特征与bank中的所有向量cat到一起
                         [norm_hidden_states] + bank_feas, dim=1
                     )
                     # print(f"modify_norm_hidden_states:{modify_norm_hidden_states.shape}")
@@ -215,7 +215,7 @@ class ReferenceAttentionControl:
 
                     # Temporal-Attention
                     return hidden_states            #read 模式在这里返回
-            # 如果是write模式，继续后面的代码
+            # 如果是write模式，继续后面的代码, 注意write模式下没有交叉注意力，因为write的整个扩散网络的输入只有原始图，不需要做交叉注意力，只做自注意力就行
             if self.use_ada_layer_norm_zero:                        # 应该没进这里
                 attn_output = gate_msa.unsqueeze(1) * attn_output
             hidden_states = attn_output + hidden_states             #进行一次残差，注意是没经过norm1的图像特征

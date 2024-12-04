@@ -63,8 +63,7 @@ def parse_args():
     return args
 
 
-def main():
-    args = parse_args()
+def main(args):
 
     config = OmegaConf.load(args.config)
     if config.weight_dtype == "fp16":
@@ -237,4 +236,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    
+    images = [os.path.join('test',i) for i in os.listdir("./assets/halfbody_demo/refimag/test")]
+    audios = [os.path.join('chinese',i) for i in os.listdir("./assets/halfbody_demo/audio/chinese")]
+    args = parse_args()
+    for image in images:
+        args.refimg_name = image
+        args.audio_name = random.choice(audios)
+        main(args)

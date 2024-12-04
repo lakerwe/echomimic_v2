@@ -446,6 +446,7 @@ class EchoMimicV2Pipeline(DiffusionPipeline):
         # Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)            # 设置推理时间步长
         timesteps = self.scheduler.timesteps
+        # print("timesteps :",timesteps)  #timesteps为 tensor([999, 966, 932, 899, 866, 832, 799, 766, 732, 699, 666, 632, 599, 566,532, 499, 466, 432, 399, 366, 332, 299, 266, 232, 199, 166, 132,  99, 66,  32], device='cuda:0')
 
         batch_size = 1
 
@@ -502,7 +503,7 @@ class EchoMimicV2Pipeline(DiffusionPipeline):
         context_scheduler = get_context_scheduler(context_schedule)             # context_schedule 为 'uniform', get_context_scheduler函数返回context.py的uniform函数
 
         # denoising loop
-        num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order          #计算一个热启动迭代步数
+        num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order          #计算一个热启动迭代步数,self.scheduler.order是在diffusers库的类中自身定义的,值为1
         context_queue = list(                                                   # 本例产生的是连续12帧
             context_scheduler(                                                  # 这里怎么做的？不懂？？
                 0,
@@ -525,7 +526,7 @@ class EchoMimicV2Pipeline(DiffusionPipeline):
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for t_i, t in enumerate(timesteps):
 
-                noise_pred = torch.zeros(
+                noise_pred = torch.zeros(                                           #用来记录单次推理预测的每一帧的噪声
                     (
                         latents.shape[0] * (2 if do_classifier_free_guidance else 1),
                         *latents.shape[1:],
@@ -533,13 +534,13 @@ class EchoMimicV2Pipeline(DiffusionPipeline):
                     device=latents.device,
                     dtype=latents.dtype,
                 )
-                counter = torch.zeros(
+                counter = torch.zeros(                                              #用来记录每一帧推理的次数，本实验默认是30次
                     (1, 1, latents.shape[2], 1, 1),
                     device=latents.device,
                     dtype=latents.dtype,
                 )
 
-                # 1. Forward reference image
+                # 1. Forward reference image                            #第一次扩散推理时，将原始图片的vae编码张量送到UNet2dconditionalModel进行一次推理，注意没有输入其他任何条件(唯一条件就是时间0)，同时将所有的atten层保存在bank中
                 if t_i == 0:                                            #只在第一次对原始图片利用UNet2dconditionalModel进行一次编码,保存在write 的bank中
                     self.reference_unet(                                # 注意这里已经把self.reference_unet中所有的attention层改了，attention走的hacked_basic_transformer_inner_forward
                         ref_image_latents,                              #送入vae编码的图片
@@ -585,13 +586,13 @@ class EchoMimicV2Pipeline(DiffusionPipeline):
                     audio_latents = torch.cat([torch.zeros_like(audio_latents_cond), audio_latents_cond], 0)        # 将全0的张量与音频特征cat到一起
                     pose_latents_cond = torch.cat([pose_enocder_tensor[:, :, c] for c in new_context]).to(device)   # 将对应帧的pose feature拿出来cat到一起
                     pose_latents = torch.cat([torch.zeros_like(pose_latents_cond), pose_latents_cond], 0)           # 将全0的张量与pose feature cat到一起
-                    
+                    la = latent_model_input
                     latent_model_input = self.scheduler.scale_model_input(                                          # 将噪声特征与当前步数输入 scheduler
-                        latent_model_input, t
+                        latent_model_input, t                                                                       # 查看diffusers库的scale_model_input函数，发现该函数什么都没做，直接将输入的latent_model_input返回了
                     )
                     b, c, f, h, w = latent_model_input.shape
                     
-                    pred = self.denoising_unet(
+                    pred = self.denoising_unet(                                                                     #过一遍emo的unet
                         latent_model_input,
                         t,
                         encoder_hidden_states=None,
@@ -611,7 +612,7 @@ class EchoMimicV2Pipeline(DiffusionPipeline):
                         noise_pred_text - noise_pred_uncond
                     )
 
-                latents = self.scheduler.step(
+                latents = self.scheduler.step(                                                                      # 去噪过程
                     noise_pred, t, latents, **extra_step_kwargs
                 ).prev_sample
 

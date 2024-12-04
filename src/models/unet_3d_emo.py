@@ -396,13 +396,13 @@ class EMOUNet3DConditionModel(ModelMixin, ConfigMixin):
 
     def forward(
         self,
-        sample: torch.FloatTensor,
+        sample: torch.FloatTensor,                                              # 需要去噪的张量
         timestep: Union[torch.Tensor, float, int],
-        encoder_hidden_states: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,                                    # 输入none
         class_labels: Optional[torch.Tensor] = None,
-        audio_cond_fea: Optional[torch.Tensor] = None,
+        audio_cond_fea: Optional[torch.Tensor] = None,                          # 输入的 音频特征
         attention_mask: Optional[torch.Tensor] = None,
-        face_musk_fea: Optional[torch.Tensor] = None,
+        face_musk_fea: Optional[torch.Tensor] = None,                           # 输入的 pose feature
         down_block_additional_residuals: Optional[Tuple[torch.Tensor]] = None,
         mid_block_additional_residual: Optional[torch.Tensor] = None,
         return_dict: bool = True,
@@ -481,7 +481,7 @@ class EMOUNet3DConditionModel(ModelMixin, ConfigMixin):
 
         # pre-process
         sample = self.conv_in(sample)
-        if face_musk_fea is not None:
+        if face_musk_fea is not None:                                   #注意这里直接将需要去噪的张量和pose的embedding相加了
             # print(sample.shape, face_musk_fea.shape)
             sample = sample + face_musk_fea
 
@@ -495,7 +495,7 @@ class EMOUNet3DConditionModel(ModelMixin, ConfigMixin):
                 sample, res_samples = downsample_block(
                     hidden_states=sample,
                     temb=emb,
-                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,        #为none
                     audio_cond_fea=audio_cond_fea,
                     attention_mask=attention_mask,
                 )
