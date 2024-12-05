@@ -78,10 +78,10 @@ class VanillaTemporalModule(nn.Module):
         self,
         input_tensor,
         temb,
-        encoder_hidden_states,
+        encoder_hidden_states,                                          # None
         attention_mask=None,
         anchor_frame_idx=None,
-    ):
+    ):                                                                  # 注意temb其实没用到，只使用了input_tensor(去噪张量)，并且encoder_hidden_states,attention_mask,anchor_frame_idx都为none
         hidden_states = input_tensor
         hidden_states = self.temporal_transformer(
             hidden_states, encoder_hidden_states, attention_mask
@@ -149,14 +149,14 @@ class TemporalTransformer3DModel(nn.Module):
         ), f"Expected hidden_states to have ndim=5, but got ndim={hidden_states.dim()}."
         # print("temporal hidden_states shape3:", hidden_states.shape)
         video_length = hidden_states.shape[2]
-        hidden_states = rearrange(hidden_states, "b c f h w -> (b f) c h w")
+        hidden_states = rearrange(hidden_states, "b c f h w -> (b f) c h w")        #注意f这个维度为推理的帧数,本次测试显示b为2，即batch size是2
 
         batch, channel, height, weight = hidden_states.shape
-        residual = hidden_states
+        residual = hidden_states                                                    # 记录下 后面做残差
 
         hidden_states = self.norm(hidden_states)
-        inner_dim = hidden_states.shape[1]
-        hidden_states = hidden_states.permute(0, 2, 3, 1).reshape(
+        inner_dim = hidden_states.shape[1]                                          # 通道维度
+        hidden_states = hidden_states.permute(0, 2, 3, 1).reshape(                  # 将去噪张量展开后进行一次线性投影,拉齐特征维度
             batch, height * weight, inner_dim
         )
         hidden_states = self.proj_in(hidden_states)
@@ -171,7 +171,7 @@ class TemporalTransformer3DModel(nn.Module):
 
         # output
         hidden_states = self.proj_out(hidden_states)
-        hidden_states = (
+        hidden_states = (                                                           # 恢复张量的形状
             hidden_states.reshape(batch, height, weight, inner_dim)
             .permute(0, 3, 1, 2)
             .contiguous()
@@ -208,7 +208,7 @@ class TemporalTransformerBlock(nn.Module):
         attention_blocks = []
         norms = []
 
-        for block_name in attention_block_types:
+        for block_name in attention_block_types:                #加入两层temporal self
             attention_blocks.append(
                 VersatileAttention(
                     attention_mode=block_name.split("_")[0],
@@ -278,7 +278,7 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-class VersatileAttention(Attention):
+class VersatileAttention(Attention):            # 该类继承了Attention
     def __init__(
         self,
         attention_mode=None,
@@ -359,12 +359,12 @@ class VersatileAttention(Attention):
     ):
         if self.attention_mode == "Temporal":
             d = hidden_states.shape[1]  # d means HxW
-            hidden_states = rearrange(
-                hidden_states, "(b f) d c -> (b d) f c", f=video_length
-            )
+            hidden_states = rearrange(                              # 重点，注意这里对去噪张量reshape的策略！！c通道表示的是每个像素点的特征，f表示的是连续的视频帧，(b d)是像素的空间
+                hidden_states, "(b f) d c -> (b d) f c", f=video_length     # 位置，所以reshape后进入attention做注意力的意思是，将连续帧的相同位置像素之间的特征进行注意力计算
+            )                                                               # 即将相同空间位置不同帧之间的像素特征进行 信息交互。
 
             if self.pos_encoder is not None:
-                hidden_states = self.pos_encoder(hidden_states)
+                hidden_states = self.pos_encoder(hidden_states)         # 位置编码
 
             encoder_hidden_states = (
                 repeat(encoder_hidden_states, "b n c -> (b d) n c", d=d)
@@ -383,7 +383,7 @@ class VersatileAttention(Attention):
             **cross_attention_kwargs,
         )
 
-        if self.attention_mode == "Temporal":
+        if self.attention_mode == "Temporal":                       # 恢复处理后的张量shape
             hidden_states = rearrange(hidden_states, "(b d) f c -> (b f) d c", d=d)
 
         return hidden_states

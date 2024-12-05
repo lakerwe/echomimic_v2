@@ -39,7 +39,7 @@ class EMOUNet3DConditionModel(ModelMixin, ConfigMixin):
         center_input_sample: bool = False,
         flip_sin_to_cos: bool = True,
         freq_shift: int = 0,
-        down_block_types: Tuple[str] = (
+        down_block_types: Tuple[str] = (                                    # 注意这里写明了encode、neck、decode所用的类，全在unet_3d_blocks.py文件
             "CrossAttnDownBlock3D",
             "CrossAttnDownBlock3D",
             "CrossAttnDownBlock3D",
@@ -401,7 +401,7 @@ class EMOUNet3DConditionModel(ModelMixin, ConfigMixin):
         encoder_hidden_states: torch.Tensor,                                    # 输入none
         class_labels: Optional[torch.Tensor] = None,
         audio_cond_fea: Optional[torch.Tensor] = None,                          # 输入的 音频特征
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,                          # 输入为 none
         face_musk_fea: Optional[torch.Tensor] = None,                           # 输入的 pose feature
         down_block_additional_residuals: Optional[Tuple[torch.Tensor]] = None,
         mid_block_additional_residual: Optional[torch.Tensor] = None,
@@ -435,7 +435,7 @@ class EMOUNet3DConditionModel(ModelMixin, ConfigMixin):
             forward_upsample_size = True
 
         # prepare attention_mask
-        if attention_mask is not None:
+        if attention_mask is not None:                                              # 不进
             attention_mask = (1 - attention_mask.to(sample.dtype)) * -10000.0
             attention_mask = attention_mask.unsqueeze(1)
 
@@ -444,8 +444,8 @@ class EMOUNet3DConditionModel(ModelMixin, ConfigMixin):
             sample = 2 * sample - 1.0
 
         # time
-        timesteps = timestep
-        if not torch.is_tensor(timesteps):
+        timesteps = timestep                                #将timestep转换为需要的张量
+        if not torch.is_tensor(timesteps):                                          # 如果timesteps是一个标量，将该标量转换为张量
             # This would be a good case for the `match` statement (Python 3.10+)
             is_mps = sample.device.type == "mps"
             if isinstance(timestep, float):
@@ -459,15 +459,14 @@ class EMOUNet3DConditionModel(ModelMixin, ConfigMixin):
         # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
         timesteps = timesteps.expand(sample.shape[0])
 
-        t_emb = self.time_proj(timesteps)
+        t_emb = self.time_proj(timesteps)                  #对timesteps进行一次投影
 
         # timesteps does not contain any weights and will always return f32 tensors
         # but time_embedding might actually be running in fp16. so we need to cast here.
         # there might be better ways to encapsulate this.
         t_emb = t_emb.to(dtype=self.dtype)
-        emb = self.time_embedding(t_emb)
-
-        if self.class_embedding is not None:
+        emb = self.time_embedding(t_emb)                    #将投影后的timestep转换为time embedding
+        if self.class_embedding is not None:                #注意 self.class_embedding是none，因此不会进这个if分支
             if class_labels is None:
                 raise ValueError(
                     "class_labels should be provided when num_class_embeds > 0"
@@ -480,35 +479,34 @@ class EMOUNet3DConditionModel(ModelMixin, ConfigMixin):
             emb = emb + class_emb
 
         # pre-process
-        sample = self.conv_in(sample)
+        sample = self.conv_in(sample)                       #对去噪张量进行一次卷积后与 pose的特征相加
         if face_musk_fea is not None:                                   #注意这里直接将需要去噪的张量和pose的embedding相加了
             # print(sample.shape, face_musk_fea.shape)
             sample = sample + face_musk_fea
 
         # down
-        down_block_res_samples = (sample,)
+        down_block_res_samples = (sample,)                  #记录encoder中每一个block的输出
         for downsample_block in self.down_blocks:
             if (
-                hasattr(downsample_block, "has_cross_attention")
-                and downsample_block.has_cross_attention
+                hasattr(downsample_block, "has_cross_attention")        #判断down sample过程中是CrossAttnDownBlock3D还是DownBlock3D类
+                and downsample_block.has_cross_attention                #如果是crossattndownblock3d，会把语音特征传入
             ):
                 sample, res_samples = downsample_block(
                     hidden_states=sample,
-                    temb=emb,
+                    temb=emb,                                           # 步数，时间
                     encoder_hidden_states=encoder_hidden_states,        #为none
-                    audio_cond_fea=audio_cond_fea,
+                    audio_cond_fea=audio_cond_fea,                      #注意在attention层将语音特征融合
                     attention_mask=attention_mask,
                 )
             else:
                 sample, res_samples = downsample_block(
                     hidden_states=sample,
-                    temb=emb,
-                    encoder_hidden_states=encoder_hidden_states,
+                    temb=emb,                                           # 步数，时间
+                    encoder_hidden_states=encoder_hidden_states,        # 为none
                 )
 
             down_block_res_samples += res_samples
-
-        if down_block_additional_residuals is not None:
+        if down_block_additional_residuals is not None:                 # down_block_additional_residuals为none，不进这里
             new_down_block_res_samples = ()
 
             for down_block_res_sample, down_block_additional_residual in zip(
@@ -522,46 +520,45 @@ class EMOUNet3DConditionModel(ModelMixin, ConfigMixin):
             down_block_res_samples = new_down_block_res_samples
 
         # mid
-        sample = self.mid_block(
+        sample = self.mid_block(                                        #将去噪张量，时间，音频特征输入 中间阶段(bottle neck)
             sample,
             emb,
             encoder_hidden_states=encoder_hidden_states,
             audio_cond_fea=audio_cond_fea,
-            attention_mask=attention_mask,
+            attention_mask=attention_mask,                              #attention_mask 为none
         )
-
-        if mid_block_additional_residual is not None:
+        if mid_block_additional_residual is not None:                   # mid_block_additional_residual为none，不进这里
             sample = sample + mid_block_additional_residual
 
         # up
         for i, upsample_block in enumerate(self.up_blocks):
-            is_final_block = i == len(self.up_blocks) - 1
+            is_final_block = i == len(self.up_blocks) - 1               #判断是否是最后一个block
 
-            res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
-            down_block_res_samples = down_block_res_samples[
+            res_samples = down_block_res_samples[-len(upsample_block.resnets) :]        #将降采样过程中对应尺寸的输出结果拿出出来
+            down_block_res_samples = down_block_res_samples[                            #更新降采样保存的结果列表
                 : -len(upsample_block.resnets)
             ]
 
             # if we have not reached the final block and need to forward the
             # upsample size, we do it here
-            if not is_final_block and forward_upsample_size:
+            if not is_final_block and forward_upsample_size:                            #非最后一个upsample block,则获取需要上采样的shape
                 upsample_size = down_block_res_samples[-1].shape[2:]
 
             if (
                 hasattr(upsample_block, "has_cross_attention")
                 and upsample_block.has_cross_attention
             ):
-                sample = upsample_block(
+                sample = upsample_block(                                                # transformer层 推理
                     hidden_states=sample,
                     temb=emb,
-                    res_hidden_states_tuple=res_samples,
+                    res_hidden_states_tuple=res_samples,                                # 各降采样层的输出特征
                     encoder_hidden_states=encoder_hidden_states,
-                    audio_cond_fea=audio_cond_fea,
+                    audio_cond_fea=audio_cond_fea,                                      # 音频特征
                     upsample_size=upsample_size,
                     attention_mask=attention_mask,
                 )
             else:
-                sample = upsample_block(
+                sample = upsample_block(                                                #卷积层推理
                     hidden_states=sample,
                     temb=emb,
                     res_hidden_states_tuple=res_samples,

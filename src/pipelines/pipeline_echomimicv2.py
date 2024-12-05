@@ -524,7 +524,7 @@ class EchoMimicV2Pipeline(DiffusionPipeline):
 # 这里 timesteps 为 tensor([999,966,932,899, 866, 832, 799, 766, 732, 699, 666, 632, 599, 566, 532, 499, 466, 432, 399, 366, 332, 299, 266, 232, 199, 166, 132,  99,66,  32], device='cuda:0')
 # timesteps长度为 30
         with self.progress_bar(total=num_inference_steps) as progress_bar:
-            for t_i, t in enumerate(timesteps):
+            for t_i, t in enumerate(timesteps):                                     #注意是单步推理所有帧
 
                 noise_pred = torch.zeros(                                           #用来记录单次推理预测的每一帧的噪声
                     (
@@ -573,17 +573,18 @@ class EchoMimicV2Pipeline(DiffusionPipeline):
                     for c_j in range(len(context)):
                         for c_i in range(len(context[c_j])):
                             new_context[c_j][c_i] = (context[c_j][c_i] + t_i * 3) % video_length
-        
-
+                    # print("new_context:",new_context)           # 迭代过程中 new_context会分别为 [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]] 等,即global_context中的每个元素
+                    # 准备本轮扩散的噪声张量帧
                     latent_model_input = (                                  # 将latents的某些帧拿出来cat到一起
                         torch.cat([latents[:, :, c] for c in new_context])
                         .to(device)
                         .repeat(2 if do_classifier_free_guidance else 1, 1, 1, 1, 1)
                     )
-
+                    # 准备本轮参与指导的音频特征帧
                     audio_latents_cond = torch.cat([audio_fea_final[:, c] for c in new_context]).to(device)         #将对应帧的audio_feature拿出来cat到一起
                                         
                     audio_latents = torch.cat([torch.zeros_like(audio_latents_cond), audio_latents_cond], 0)        # 将全0的张量与音频特征cat到一起
+                    # 准备本轮参与指导的动作特征帧
                     pose_latents_cond = torch.cat([pose_enocder_tensor[:, :, c] for c in new_context]).to(device)   # 将对应帧的pose feature拿出来cat到一起
                     pose_latents = torch.cat([torch.zeros_like(pose_latents_cond), pose_latents_cond], 0)           # 将全0的张量与pose feature cat到一起
                     la = latent_model_input
@@ -591,8 +592,8 @@ class EchoMimicV2Pipeline(DiffusionPipeline):
                         latent_model_input, t                                                                       # 查看diffusers库的scale_model_input函数，发现该函数什么都没做，直接将输入的latent_model_input返回了
                     )
                     b, c, f, h, w = latent_model_input.shape
-                    
-                    pred = self.denoising_unet(                                                                     #过一遍emo的unet
+                    # 将去噪张量、音频特征、动作特征输入到扩散模型 进行本轮噪声预测 
+                    pred = self.denoising_unet(                                                                     #过一遍emo的unet,将音频和动作特征都丢进去
                         latent_model_input,
                         t,
                         encoder_hidden_states=None,

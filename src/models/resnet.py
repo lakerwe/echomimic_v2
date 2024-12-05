@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from einops import rearrange
 
 
-class InflatedConv3d(nn.Conv2d):
+class InflatedConv3d(nn.Conv2d):       #其实就是将5维张量reshape成4维，进行2d卷积后再reshape回5维
     def forward(self, x):
         video_length = x.shape[2]
 

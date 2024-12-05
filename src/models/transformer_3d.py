@@ -102,7 +102,7 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
 
     def forward(
         self,
-        hidden_states,
+        hidden_states,                                  #去噪张量
         encoder_hidden_states=None,
         audio_cond_fea=None,
         timestep=None,
@@ -118,7 +118,7 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
         #     encoder_hidden_states = repeat(
         #         encoder_hidden_states, "b n c -> (b f) n c", f=video_length
         #     )
-        if audio_cond_fea.shape[0] != hidden_states.shape[0]:
+        if audio_cond_fea.shape[0] != hidden_states.shape[0]:       #注意这句说明一定将音频特征传入了
             # print(audio_cond_fea.shape, len(audio_cond_fea))
             if len(audio_cond_fea.shape) == 3:
                 audio_cond_fea = rearrange(

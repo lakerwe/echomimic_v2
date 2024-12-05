@@ -331,11 +331,11 @@ class CrossAttnDownBlock3D(nn.Module):
 
         self.has_cross_attention = True
         self.attn_num_head_channels = attn_num_head_channels
-
+        # 注意构建的crossAttnDownBlock3D包含多层layer，每层layer都包含一个resnet，一个transformer3dModel,和一个motion_module
         for i in range(num_layers):
             in_channels = in_channels if i == 0 else out_channels
             resnets.append(
-                ResnetBlock3D(
+                ResnetBlock3D(                  #里面只包含卷积层，3d的意思其实是把5维张量reshape成4维后进行2d卷积，然后再恢复成5维
                     in_channels=in_channels,
                     out_channels=out_channels,
                     temb_channels=temb_channels,
@@ -352,7 +352,7 @@ class CrossAttnDownBlock3D(nn.Module):
             if dual_cross_attention:
                 raise NotImplementedError
             attentions.append(
-                Transformer3DModel(
+                Transformer3DModel(             # 这里面包含多层 TemporalBasicTransformerBlock 
                     attn_num_head_channels,
                     out_channels // attn_num_head_channels,
                     in_channels=out_channels,
@@ -442,10 +442,10 @@ class CrossAttnDownBlock3D(nn.Module):
                 )
 
             else:
-                hidden_states = resnet(hidden_states, temb)
-                hidden_states = attn(
+                hidden_states = resnet(hidden_states, temb)                     #去噪张量与时间融合
+                hidden_states = attn(                                          #去噪张量与音频特征融合
                     hidden_states,
-                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,                # 全称为None
                     audio_cond_fea = audio_cond_fea,
                 ).sample
 
@@ -687,7 +687,7 @@ class CrossAttnUpBlock3D(nn.Module):
     def forward(
         self,
         hidden_states,
-        res_hidden_states_tuple,
+        res_hidden_states_tuple,                                        # res_hidden_states_tuple是降采样期间保存的卷积特征
         temb=None,
         encoder_hidden_states=None,
         audio_cond_fea=None,
