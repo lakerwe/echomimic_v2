@@ -2,7 +2,7 @@ import math
 import numpy as np
 import matplotlib
 import cv2
-
+import random
 
 eps = 0.01
 
@@ -107,7 +107,7 @@ def draw_handpose(canvas, all_hand_peaks, all_hand_scores):
 
     edges = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [0, 9], [9, 10], \
              [10, 11], [11, 12], [0, 13], [13, 14], [14, 15], [15, 16], [0, 17], [17, 18], [18, 19], [19, 20]]
-
+    all_hand_scores[all_hand_scores<0.9] = random.uniform(0.9,1)
     for peaks, scores in zip(all_hand_peaks, all_hand_scores):
 
         for ie, e in enumerate(edges):
