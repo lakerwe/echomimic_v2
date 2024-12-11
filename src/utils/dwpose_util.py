@@ -156,7 +156,7 @@ def draw_pose_select_v2(pose, H, W, ref_w=2160):
     Returns:
         np.ndarray: image pixel value in RGB mode
     """
-    bodies = pose['bodies']
+    # bodies = pose['bodies']
     hands = pose['hands']
 
     sz = min(H, W)
